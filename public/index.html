@@ -907,7 +907,7 @@ async function sendMsg(){
         });
         const data=await res.json();
         removeTyping();
-        if(data.error){
+        if(!res.ok||data.error){
             appendBubble('ai','Sorry, I ran into an issue: '+( data.error.message||'Unknown error')+'. Please try again.');
         }else{
             const reply=data.content?.find(b=>b.type==='text')?.text||"I couldn't generate a response. Please try again.";
