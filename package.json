@@ -1,0 +1,12 @@
+{
+  "name": "health-hub",
+  "version": "1.0.0",
+  "description": "Privacy-first AI health decision assistant",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "devDependencies": {
+    "vercel": "^37.0.0"
+  }
+}
