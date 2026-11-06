@@ -1,25 +1,28 @@
 # Health Hub
 
-Privacy-first AI health decision assistant, powered by Claude and Mayo Clinic guidelines.
-
----
-
-## Project Structure
+Privacy-first, rule-based health decision assistant (MVP v5). Guidance logic is mapped to Mayo C## Project Structure
 
 ```
 health-hub/
+├── index.html           ← The whole app: assessment engine, profiles, chat UI
 ├── api/
-│   └── chat.js          ← Serverless API proxy (your API key lives here)
-├── public/
-│   └── index.html       ← The entire frontend app
-├── vercel.json          ← Routing config
+│   └── chat.js          ← Serverless proxy to Gemini (API key stays on the server)
+├── docs/
+│   └── RULES.md         ← Every decision rule mapped to its Mayo Clinic source (review checklist)
+├── vercel.json
 ├── package.json
-├── .env.example         ← Template for environment variables
-└── .gitignore
+└── .env.example
 ```
 
-**The key idea:** The frontend (`public/index.html`) never touches the
-Anthropic API directly. It calls `/api/chat` — your own serverless function —
+- The assessment runs entirely in the browser. Profiles and testing data are saved
+  **only on the device** (localStorage).
+- **Testing stats:** tap "📊 Testing stats" at the bottom of the home screen to see the PRD
+  success metrics (clarity, reduced worry, time to result, abandonment) and export a CSV.
+- Medical rules: see `docs/RULES.md` before changing any threshold.
+
+---
+
+less function —
 which holds the API key securely on the server.
 
 ---
@@ -29,7 +32,7 @@ which holds the API key securely on the server.
 ### 1. Prerequisites
 - A [GitHub](https://github.com) account
 - A [Vercel](https://vercel.com) account (free — sign up with GitHub)
-- An [Anthropic API key](https://console.anthropic.com)
+- A [Google Gemini API key](https://aistudio.google.com/app/apikey)
 - [Node.js](https://nodejs.org) installed locally (v18+)
 
 ---
@@ -62,7 +65,7 @@ git push -u origin main
 
    | Name | Value |
    |------|-------|
-   | `ANTHROPIC_API_KEY` | `sk-ant-your-actual-key` |
+   | `GEMINI_API_KEY` | `your-gemini-key` |
 
 5. Click **Deploy**
 
@@ -75,7 +78,7 @@ Vercel will give you a live URL like `https://health-hub-xyz.vercel.app` in ~30 
 ```bash
 npm install
 cp .env.example .env.local
-# Edit .env.local and add your real ANTHROPIC_API_KEY
+# Edit .env.local and add your real GEMINI_API_KEY
 
 npm run dev
 # → App runs at http://localhost:3000
@@ -85,7 +88,7 @@ npm run dev
 
 ## Making changes
 
-Edit `public/index.html` for any UI changes.
+Edit `index.html` for any UI or rule changes (and update `docs/RULES.md`).
 Edit `api/chat.js` to change AI behavior, add rate limiting, etc.
 
 After changes:

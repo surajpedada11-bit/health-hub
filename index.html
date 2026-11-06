@@ -285,6 +285,20 @@
         .modal p { font-size:15px; color:var(--text-secondary); line-height:1.5; margin-bottom:20px; }
         .modal-btns { display:flex; gap:10px; }
         .modal-btns button { flex:1; }
+        /* FEEDBACK + TESTING STATS */
+        .fb-q { font-size:15px; font-weight:600; margin:12px 0 8px; }
+        .fb-q:first-of-type { margin-top:0; }
+        .fb-row { display:flex; gap:10px; }
+        .fb-btn { flex:1; min-height:48px; border:2px solid var(--border); background:white; border-radius:var(--radius-sm); font-size:16px; font-weight:700; cursor:pointer; color:var(--text-primary); }
+        .fb-btn:hover { border-color:var(--brand); }
+        .fb-btn.on { border-color:var(--brand); background:var(--brand); color:white; }
+        .fb-thanks { margin-top:12px; font-size:14px; color:var(--t-monitor); font-weight:600; }
+        .stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+        .stat { border:1.5px solid var(--border-soft); border-radius:var(--radius-md); padding:14px; }
+        .stat-label { font-size:13px; color:var(--text-secondary); line-height:1.35; }
+        .stat-value { font-size:28px; font-weight:700; margin:4px 0 2px; }
+        .stat-target { font-size:12px; font-weight:700; }
+        .stat-target.pass { color:var(--t-monitor); } .stat-target.fail { color:var(--t-urgent); } .stat-target.na { color:var(--text-tertiary); }
         .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
         @media(max-width:480px){ body{padding:0;} .app{border-radius:0; height:100vh; height:100dvh;} .s-title{font-size:25px;} }
     </style>
@@ -418,7 +432,18 @@ const store = {
     get(k){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch(e){ return null; } },
     set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
 };
-function bumpMetric(k){ const m = store.get('hh_metrics') || {}; m[k] = (m[k]||0) + 1; store.set('hh_metrics', m); }
+// Testing sessions (PRD success metrics). Stored only on this device; export as CSV.
+const sessions = () => store.get('hh_sessions') || [];
+function updateSession(id, patch){
+    if(!id) return null;
+    const all = sessions(), i = all.findIndex(x => x.id === id);
+    if(i < 0) return null;
+    all[i] = { ...all[i], ...patch }; store.set('hh_sessions', all); return all[i];
+}
+function newSession(){
+    const rec = { id: Date.now().toString(36) + Math.random().toString(36).slice(2,6), startedAt: Date.now(), completed:false, seconds:null, tier:null, symptoms:'', clear:null, lessWorried:null, tele:false };
+    store.set('hh_sessions', [...sessions(), rec]); return rec.id;
+}
 
 // ── SOURCES (labels only; internal mapping per PRD v3) ───────────────────────
 const SRC = {
@@ -900,7 +925,7 @@ function back(){
     S.editing = false;
     go(i <= 0 ? 'welcome' : seq[i - 1]);
 }
-function startAssessment(){ S = blankState(); bumpMetric('started'); go('who'); }
+function startAssessment(){ S = blankState(); S.sid = newSession(); go('who'); }
 function restartFlow(){ S = blankState(); go('welcome'); }
 function editStep(step){ if(S.step === step) return; S.editing = true; go(step); }
 
@@ -962,6 +987,7 @@ function render(animate = true){
     if(S.step === 'welcome') html = renderWelcome();
     else if(S.step === 'results') html = renderResults();
     else if(S.step === 'telehealth') html = renderTelehealth();
+    else if(S.step === 'stats') html = renderStats();
     else {
         const def = STEPS[S.step];
         html = def.type === 'custom' ? def.render() : renderStep(def, S.step);
@@ -986,7 +1012,8 @@ function renderWelcome(){
         <button class="btn btn-primary btn-full" onclick="startAssessment()">Start assessment →</button>
         <div class="disclaimer"><b>This is not a diagnosis.</b> Health Hub gives next-step guidance based on Mayo Clinic public guidance. If you think it’s an emergency, call 911 now.</div>
         ${!profiles.length ? `<button class="btn btn-secondary btn-full" onclick="switchTab('profile');showProfileForm(null)">👤 Create a profile first (optional)</button>` : ''}
-        <div class="device-card"><div class="device-icon">📦</div><div><div class="device-title">Health Hub Kit <span class="soon">COMING SOON</span></div><div class="device-text">A connected thermometer, pulse oximeter and blood-pressure cuff that will send readings straight into your assessment. For now, we’ll tell you which reading would help.</div></div></div>`;
+        <div class="device-card"><div class="device-icon">📦</div><div><div class="device-title">Health Hub Kit <span class="soon">COMING SOON</span></div><div class="device-text">A connected thermometer, pulse oximeter and blood-pressure cuff that will send readings straight into your assessment. For now, we’ll tell you which reading would help.</div></div></div>
+        <div style="text-align:center;margin-top:6px"><button class="link-btn" style="font-size:13px;color:var(--text-tertiary)" onclick="go('stats')">📊 Testing stats</button></div>`;
 }
 
 function renderAgeStep(){
@@ -1189,7 +1216,9 @@ function finalize(tier, reasons, notes, unknown){
 // ── RESULTS ──────────────────────────────────────────────────────────────────
 function renderResults(){
     const r = evaluate();
-    if(!S.result || S.result.tier !== r.tier) bumpMetric('completed');
+    const sess = sessions().find(x => x.id === S.sid);
+    if(sess) updateSession(S.sid, { completed:true, tier:r.tier, symptoms:S.symptoms.join('+'),
+        seconds: sess.seconds ?? Math.round((Date.now() - sess.startedAt) / 1000) });   // time to FIRST result
     S.result = r;
     const info = TIER[r.tier], ti = rank(r.tier);
     const meter = TIERS.map((t, i) => `<span class="${i <= ti ? 'on' : ''}"></span>`).join('');
@@ -1233,6 +1262,8 @@ function renderResults(){
 
         ${devMap.size && r.tier !== 'emergency' ? `<div class="device-card" style="display:block"><div class="device-title" style="margin-bottom:10px">📦 Readings that would help <span class="soon">KIT COMING SOON</span></div><div class="device-list">${[...devMap].map(([d, why]) => `<div class="device-row"><span style="font-size:20px">${DEVICES[d].icon}</span><span><b>${DEVICES[d].name}</b> — ${esc(why)}</span></div>`).join('')}</div></div>` : ''}
 
+        ${feedbackHTML()}
+
         <div class="btn-row" style="margin-top:6px">
             <button class="btn btn-primary btn-full" onclick="goToChat()">💬 Ask the AI about this result</button>
             <button class="btn btn-secondary btn-full" onclick="restartFlow()">Start a new assessment</button>
@@ -1241,8 +1272,74 @@ function renderResults(){
         <div class="source-note"><b>Not a diagnosis.</b> Health Hub uses fixed, rule-based logic mapped to Mayo Clinic public guidance. It doesn’t identify conditions. If you’re worried, contact a medical professional.</div>`;
 }
 
+function feedbackHTML(){
+    const sess = sessions().find(x => x.id === S.sid) || {};
+    const btns = (key, val) => ['yes','no'].map(v => `<button class="fb-btn ${val === v ? 'on' : ''}" onclick="giveFeedback('${key}','${v}')" aria-pressed="${val === v}">${v === 'yes' ? 'Yes' : 'No'}</button>`).join('');
+    const done = sess.clear && sess.lessWorried;
+    return `<div class="card" id="fbCard"><h3>🗳️ Quick feedback</h3>
+        <div class="fb-q">Was this guidance clear?</div><div class="fb-row">${btns('clear', sess.clear)}</div>
+        <div class="fb-q">Do you feel less worried than before?</div><div class="fb-row">${btns('lessWorried', sess.lessWorried)}</div>
+        ${done ? '<div class="fb-thanks">✓ Thanks — your feedback is saved on this device.</div>' : ''}</div>`;
+}
+function giveFeedback(key, v){
+    if(!S.sid) return;
+    updateSession(S.sid, { [key]: v });
+    $('fbCard').outerHTML = feedbackHTML();
+}
+
+// ── TESTING STATS (PRD §3 success metrics) ───────────────────────────────────
+const pct = (n, d) => d ? Math.round(n / d * 100) : null;
+function computeStats(){
+    const all = sessions(), done = all.filter(x => x.completed);
+    const secs = done.map(x => x.seconds).filter(x => x != null).sort((a, b) => a - b);
+    const median = secs.length ? (secs.length % 2 ? secs[(secs.length - 1) / 2] : Math.round((secs[secs.length/2 - 1] + secs[secs.length/2]) / 2)) : null;
+    const clearAns = done.filter(x => x.clear), worryAns = done.filter(x => x.lessWorried);
+    const teleEligible = done.filter(x => x.tier === 'provider' || x.tier === 'urgent');
+    return {
+        started: all.length, completed: done.length,
+        abandon: pct(all.length - done.length, all.length),
+        median, under60: pct(secs.filter(x => x < 60).length, secs.length),
+        clear: pct(clearAns.filter(x => x.clear === 'yes').length, clearAns.length), clearN: clearAns.length,
+        worry: pct(worryAns.filter(x => x.lessWorried === 'yes').length, worryAns.length), worryN: worryAns.length,
+        tele: pct(teleEligible.filter(x => x.tele).length, teleEligible.length), teleN: teleEligible.length
+    };
+}
+function renderStats(){
+    const st = computeStats();
+    const tile = (label, value, target, pass) => `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value">${value ?? '—'}</div><div class="stat-target ${value == null ? 'na' : pass ? 'pass' : 'fail'}">${target}${value == null ? '' : pass ? ' ✓' : ' ✗'}</div></div>`;
+    return `<div class="step-head"><button class="back-btn" onclick="go('welcome')">← Back</button><div style="flex:1"></div></div>
+        <h2 class="s-title" tabindex="-1">Testing stats</h2>
+        <p class="s-sub">Results from assessments run <b>on this device</b>, measured against the PRD success metrics. Nothing is sent anywhere.</p>
+        <div class="stat-grid">
+            ${tile('Found guidance clear' + (st.clearN ? ` (${st.clearN} answers)` : ''), st.clear == null ? null : st.clear + '%', 'Target ≥ 80%', st.clear >= 80)}
+            ${tile('Felt less worried' + (st.worryN ? ` (${st.worryN} answers)` : ''), st.worry == null ? null : st.worry + '%', 'Target ≥ 70%', st.worry >= 70)}
+            ${tile('Median time to result', st.median == null ? null : st.median + 's', 'Target < 60s', st.median < 60)}
+            ${tile('Abandoned before result', st.abandon == null ? null : st.abandon + '%', 'Target < 20%', st.abandon < 20)}
+        </div>
+        <div class="card"><ul>
+            <li>Assessments started: <b>&nbsp;${st.started}</b></li>
+            <li>Reached a result: <b>&nbsp;${st.completed}</b></li>
+            <li>Finished in under 60 seconds: <b>&nbsp;${st.under60 == null ? '—' : st.under60 + '%'}</b></li>
+            <li>Telehealth click-through (when offered): <b>&nbsp;${st.tele == null ? '—' : st.tele + '% of ' + st.teleN}</b></li>
+        </ul></div>
+        <div class="btn-row">
+            <button class="btn btn-primary btn-full" onclick="exportCSV()" ${st.started ? '' : 'disabled'}>⬇ Export CSV</button>
+            <button class="btn btn-secondary btn-full" onclick="resetStats()" ${st.started ? '' : 'disabled'}>Reset testing data</button>
+        </div>
+        <p class="s-sub" style="font-size:13px;margin-top:14px;">Tip: if testers use their own phones, ask each to export the CSV (or read off this screen) and send it to you. Abandonment counts any assessment that was started but never reached a result.</p>`;
+}
+function exportCSV(){
+    const cols = ['startedAt','completed','seconds','tier','symptoms','clear','lessWorried','tele'];
+    const rows = sessions().map(x => cols.map(c => c === 'startedAt' ? new Date(x.startedAt).toISOString() : (x[c] ?? '')).join(','));
+    const blob = new Blob([[cols.join(','), ...rows].join('\n')], { type:'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'health-hub-testing-' + new Date().toISOString().slice(0,10) + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+}
+function resetStats(){ if(confirm('Delete all testing data on this device?')){ store.set('hh_sessions', []); render(false); showToast('Testing data cleared'); } }
+
 let teleTimer;
-function openTelehealth(){ bumpMetric('teleClicks'); S.teleReady = false; go('telehealth'); clearTimeout(teleTimer); teleTimer = setTimeout(() => { S.teleReady = true; if(S.step === 'telehealth') render(false); }, 1400); }
+function openTelehealth(){ updateSession(S.sid, { tele:true }); S.teleReady = false; go('telehealth'); clearTimeout(teleTimer); teleTimer = setTimeout(() => { S.teleReady = true; if(S.step === 'telehealth') render(false); }, 1400); }
 function renderTelehealth(){
     const wait = S.result?.tier === 'urgent' ? '5–10 minutes' : '15–20 minutes';
     return `<div class="step-head"><button class="back-btn" onclick="back()">← Back to result</button><div style="flex:1"></div></div>
